@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { NAME_RU, SUBSTANCE_RU, formulaCostRu, nameRu, timeRu } from "../src/data/ru.ts";
 import { calculatePlan, collectCraftableIngredients, createIndexes, normalizeKey } from "../src/lib/planner.js";
 
 const catalog = JSON.parse(await readFile(new URL("../src/data/catalog.generated.json", import.meta.url), "utf8"));
@@ -12,6 +13,28 @@ test("catalog contains the complete normalized dataset", () => {
   assert.equal(catalog.materials.length, 208);
   assert.equal(catalog.recipes.filter((item) => item.kind === "alchemy").length, 74);
   assert.equal(catalog.recipes.filter((item) => item.kind === "craft").length, 202);
+});
+
+test("every recipe, material and alchemical substance has a Russian label", () => {
+  const catalogNames = new Set([...catalog.recipes.map((item) => item.name), ...catalog.materials.map((item) => item.name)]);
+  assert.equal(catalogNames.size, 468);
+  assert.equal(Object.keys(NAME_RU).length, catalogNames.size);
+
+  for (const name of catalogNames) {
+    assert.ok(NAME_RU[name], `Нет русского перевода: ${name}`);
+    assert.match(nameRu(name), /[А-Яа-яЁё]/, name);
+  }
+
+  const substances = new Set(
+    catalog.recipes.flatMap((item) => item.ingredients.filter((ingredient) => ingredient.type === "substance").map((ingredient) => ingredient.name)),
+  );
+  assert.deepEqual(substances, new Set(Object.keys(SUBSTANCE_RU)));
+  for (const substance of substances) assert.match(nameRu(substance), /[А-Яа-яЁё]/, substance);
+
+  for (const time of new Set(catalog.recipes.map((item) => item.time))) {
+    assert.doesNotMatch(timeRu(time), /Minutes?|Rounds?|Hours?|^g /, time);
+  }
+  assert.equal(formulaCostRu("N/A"), "Нет в продаже");
 });
 
 test("every recipe can be priced without missing-component warnings", () => {

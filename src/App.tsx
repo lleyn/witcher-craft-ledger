@@ -1,5 +1,6 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import catalogJson from "./data/catalog.generated.json";
+import { formulaCostRu, nameRu, timeRu, warningRu } from "./data/ru";
 import { calculatePlan, collectCraftableIngredients, createIndexes, normalizeKey } from "./lib/planner.js";
 import type { Catalog, Material, Plan, Recipe } from "./types";
 
@@ -60,12 +61,12 @@ function SubstanceChoice({
     <label className="substance-choice">
       <span>
         <i className={`substance substance-${name.toLowerCase()}`} />
-        <b>{name}</b> ×{quantity}
+        <b>{nameRu(name)}</b> ×{quantity}
       </span>
       <select value={current?.name ?? ""} onChange={(event) => onChange(event.target.value)}>
         {options.map((item) => (
           <option key={item.name} value={item.name}>
-            {item.name} · {money(item.cost)}{item.potency === 2 ? " · 2 ед." : ""}
+            {nameRu(item.name)} · {money(item.cost)}{item.potency === 2 ? " · 2 ед." : ""}
           </option>
         ))}
       </select>
@@ -80,8 +81,8 @@ function ProductionTree({ plan }: { plan: Plan }) {
         <div className="tree-step" style={{ "--depth": step.depth } as React.CSSProperties} key={`${step.recipe.id}-${index}`}>
           <span className="tree-rune">{step.depth ? "↳" : "◆"}</span>
           <div>
-            <b>{step.recipe.name}</b>
-            <small>{step.batches} парт. · СЛ {step.recipe.dc} · {step.recipe.time}</small>
+            <b>{nameRu(step.recipe.name)}</b>
+            <small>{step.batches} парт. · СЛ {step.recipe.dc} · {timeRu(step.recipe.time)}</small>
           </div>
         </div>
       ))}
@@ -108,7 +109,7 @@ function App() {
     return catalog.recipes.filter((recipe) => {
       if (kind !== "all" && recipe.kind !== kind) return false;
       if (category !== "all" && recipe.category !== category) return false;
-      return !search || `${recipe.name} ${recipe.category}`.toLowerCase().includes(search);
+      return !search || `${nameRu(recipe.name)} ${recipe.name} ${categoryLabel(recipe.category)} ${recipe.category}`.toLowerCase().includes(search);
     });
   }, [deferredQuery, kind, category]);
 
@@ -188,7 +189,7 @@ function App() {
               {filtered.map((recipe) => (
                 <button className={`recipe-row ${selected.id === recipe.id ? "selected" : ""}`} onClick={() => selectRecipe(recipe as Recipe)} key={recipe.id}>
                   <span className={`recipe-icon ${recipe.kind}`}>{recipe.kind === "alchemy" ? "◉" : "◇"}</span>
-                  <span><b>{recipe.name}</b><small>{categoryLabel(recipe.category)} · СЛ {recipe.dc}</small></span>
+                  <span><b>{nameRu(recipe.name)}</b><small>{categoryLabel(recipe.category)} · СЛ {recipe.dc}</small></span>
                   <i>›</i>
                 </button>
               ))}
@@ -201,12 +202,12 @@ function App() {
               <div>
                 <p className="eyebrow">II · Технологическая карта</p>
                 <span className={`kind-badge ${selected.kind}`}>{selected.kind === "alchemy" ? "Алхимия" : "Ремесло"}</span>
-                <h2>{selected.name}</h2>
+                <h2>{nameRu(selected.name)}</h2>
                 <p>{categoryLabel(selected.category)} · {LEVEL_LABELS[selected.level] ?? selected.level}</p>
               </div>
               <dl className="recipe-stats">
                 <div><dt>Сложность</dt><dd>{selected.dc}</dd></div>
-                <div><dt>Время</dt><dd>{selected.time}</dd></div>
+                <div><dt>Время</dt><dd>{timeRu(selected.time)}</dd></div>
                 <div><dt>Выход</dt><dd>×{selected.batch}</dd></div>
               </dl>
             </header>
@@ -230,7 +231,7 @@ function App() {
                     const material = indexes.materials.get(normalizeKey(ingredient.name)) as Material | undefined;
                     return (
                       <div className="ingredient-row" key={`${selected.id}-${ingredient.name}`}>
-                        <span><b>{ingredient.name}</b><small>{material ? `${money(material.cost)} / ед.` : "Цена через вложенный рецепт"}</small></span>
+                        <span><b>{nameRu(ingredient.name)}</b><small>{material ? `${money(material.cost)} / ед.` : "Цена через вложенный рецепт"}</small></span>
                         <strong>×{ingredient.quantity * batches}</strong>
                         {subrecipe?.kind === "craft" ? (
                           <button className={isCrafted ? "make active" : "make"} onClick={() => toggleCrafted(ingredient.name)}>{isCrafted ? "Изготовить" : "Купить"}</button>
@@ -249,7 +250,7 @@ function App() {
                 <div className="craftable-options">
                   {craftable.map((item) => {
                     const active = crafted.has(normalizeKey(item.name));
-                    return <button className={active ? "active" : ""} onClick={() => toggleCrafted(item.name)} key={item.id}><span>{active ? "◆" : "◇"}</span>{item.name}</button>;
+                    return <button className={active ? "active" : ""} onClick={() => toggleCrafted(item.name)} key={item.id}><span>{active ? "◆" : "◇"}</span>{nameRu(item.name)}</button>;
                   })}
                 </div>
               </div>}
@@ -266,7 +267,7 @@ function App() {
                   <div className="cost-comparison">
                     {selected.investment != null && <span><small>Инвестиции в источнике</small><b>{money(selected.investment * batches)}</b></span>}
                     {selected.marketCost != null && <span><small>Рыночная цена</small><b>{money(selected.marketCost * batches)}</b></span>}
-                    {selected.formulaCost != null && <span><small>Цена формулы</small><b>{typeof selected.formulaCost === "number" ? money(selected.formulaCost) : selected.formulaCost}</b></span>}
+                    {selected.formulaCost != null && <span><small>Цена формулы</small><b>{typeof selected.formulaCost === "number" ? money(selected.formulaCost) : formulaCostRu(selected.formulaCost)}</b></span>}
                   </div>
                 </div>
               </div>
@@ -274,10 +275,10 @@ function App() {
               <details className="purchase-list" open>
                 <summary>Список закупки <span>{plan.purchases.length} позиций</span></summary>
                 <div>
-                  {plan.purchases.map((item) => <p key={item.name}><span>{item.name}{item.estimated ? " ≈" : ""}</span><b>×{item.quantity}</b><strong>{money(item.cost)}</strong></p>)}
+                  {plan.purchases.map((item) => <p key={item.name}><span>{nameRu(item.name)}{item.estimated ? " ≈" : ""}</span><b>×{item.quantity}</b><strong>{money(item.cost)}</strong></p>)}
                 </div>
               </details>
-              {!!plan.warnings.length && <div className="warning-box">{plan.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>}
+              {!!plan.warnings.length && <div className="warning-box">{plan.warnings.map((warning) => <p key={warning}>{warningRu(warning)}</p>)}</div>}
             </section>
           </article>
         </section>

@@ -505,3 +505,15 @@ export function warningRu(value: string): string {
   const prefix = prefixes.find((item) => value.startsWith(item));
   return prefix ? `${prefix}${nameRu(value.slice(prefix.length))}` : value;
 }
+
+export function durationRu(duration: { minutes: number; rounds: number }): string {
+  const parts: string[] = [];
+  const days = Math.floor(duration.minutes / (24 * 60));
+  const hours = Math.floor((duration.minutes % (24 * 60)) / 60);
+  const minutes = duration.minutes % 60;
+  if (days) parts.push(`${days} д`);
+  if (hours) parts.push(`${hours} ч`);
+  if (minutes) parts.push(`${minutes} мин`);
+  if (duration.rounds) parts.push(`${duration.rounds} раунд.`);
+  return parts.join(" ") || "0 мин";
+}

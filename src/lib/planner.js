@@ -110,3 +110,59 @@ export function calculatePlan(recipe, catalog, options = {}) {
     total: purchaseList.reduce((sum, item) => sum + item.cost, 0),
   };
 }
+
+export function parseRecipeTime(value) {
+  if (value === "g Hours") return { minutes: 9 * 60, rounds: 0 };
+  if (value === "1/2 Hour") return { minutes: 30, rounds: 0 };
+  const match = String(value ?? "").match(/^(\d+) (Minute|Minutes|Round|Rounds|Hour|Hours)$/);
+  if (!match) return { minutes: 0, rounds: 0 };
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit.startsWith("Minute")) return { minutes: amount, rounds: 0 };
+  if (unit.startsWith("Round")) return { minutes: 0, rounds: amount };
+  return { minutes: amount * 60, rounds: 0 };
+}
+
+export function calculatePlanDuration(plan) {
+  return plan.steps.reduce(
+    (total, step) => {
+      const duration = parseRecipeTime(step.recipe.time);
+      total.minutes += duration.minutes * step.batches;
+      total.rounds += duration.rounds * step.batches;
+      return total;
+    },
+    { minutes: 0, rounds: 0 },
+  );
+}
+
+export function combinePlans(plans) {
+  const purchases = new Map();
+  const duration = { minutes: 0, rounds: 0 };
+  const warnings = [];
+  let stepCount = 0;
+
+  for (const plan of plans) {
+    for (const item of plan.purchases) {
+      const key = normalizeKey(item.name);
+      const existing = purchases.get(key) ?? { name: item.name, quantity: 0, cost: 0, estimated: false };
+      existing.quantity += item.quantity;
+      existing.cost += item.cost;
+      existing.estimated ||= item.estimated;
+      purchases.set(key, existing);
+    }
+    const planDuration = calculatePlanDuration(plan);
+    duration.minutes += planDuration.minutes;
+    duration.rounds += planDuration.rounds;
+    stepCount += plan.steps.length;
+    warnings.push(...plan.warnings);
+  }
+
+  const purchaseList = [...purchases.values()].sort((a, b) => b.cost - a.cost);
+  return {
+    purchases: purchaseList,
+    total: purchaseList.reduce((sum, item) => sum + item.cost, 0),
+    duration,
+    stepCount,
+    warnings: [...new Set(warnings)],
+  };
+}

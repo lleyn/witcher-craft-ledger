@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import catalogJson from "./data/catalog.generated.json";
-import { formulaCostRu, nameRu, timeRu, warningRu } from "./data/ru";
-import { calculatePlan, collectCraftableIngredients, createIndexes, normalizeKey } from "./lib/planner.js";
+import { durationRu, formulaCostRu, nameRu, timeRu, warningRu } from "./data/ru";
+import { calculatePlan, calculatePlanDuration, collectCraftableIngredients, combinePlans, createIndexes, normalizeKey } from "./lib/planner.js";
 import type { Catalog, Material, Plan, Recipe } from "./types";
 
 const catalog = catalogJson as Catalog;
@@ -43,6 +43,20 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const money = (value: number) => `${Math.round(value).toLocaleString("ru-RU")} кр.`;
 const categoryLabel = (category: string) => CATEGORY_LABELS[category] ?? category;
+
+type CartEntry = {
+  recipeId: string;
+  batches: number;
+  crafted: string[];
+  substanceChoices: Record<string, string>;
+};
+
+type CartRow = {
+  entry: CartEntry;
+  recipe: Recipe;
+  plan: Plan;
+  duration: { minutes: number; rounds: number };
+};
 
 function SubstanceChoice({
   name,
@@ -90,6 +104,102 @@ function ProductionTree({ plan }: { plan: Plan }) {
   );
 }
 
+function CartPanel({
+  items,
+  onOpen,
+  onChangeBatches,
+  onRemove,
+  onClear,
+}: {
+  items: CartEntry[];
+  onOpen: (item: CartEntry) => void;
+  onChangeBatches: (recipeId: string, batches: number) => void;
+  onRemove: (recipeId: string) => void;
+  onClear: () => void;
+}) {
+  const rows = useMemo<CartRow[]>(
+    () => items.flatMap((entry) => {
+      const recipe = catalog.recipes.find((item) => item.id === entry.recipeId) as Recipe | undefined;
+      if (!recipe) return [];
+      const plan = calculatePlan(recipe, catalog, {
+        indexes,
+        batches: entry.batches,
+        crafted: new Set(entry.crafted),
+        substanceChoices: entry.substanceChoices,
+      }) as Plan;
+      return [{ entry, recipe, plan, duration: calculatePlanDuration(plan) }];
+    }),
+    [items],
+  );
+  const summary = useMemo(() => combinePlans(rows.map((row) => row.plan)), [rows]);
+
+  return (
+    <article className="recipe-panel cart-panel">
+      <header className="cart-header">
+        <div>
+          <p className="eyebrow">II · Корзина мастерской</p>
+          <h2>Общий заказ</h2>
+          <p>Сводная закупка и время для всех выбранных рецептов.</p>
+        </div>
+        {!!items.length && <button className="clear-cart" onClick={onClear}>Очистить корзину</button>}
+      </header>
+
+      {!rows.length ? (
+        <section className="cart-empty">
+          <span>◇</span>
+          <h3>Корзина пока пуста</h3>
+          <p>Откройте рецепт, настройте партии и вложенное производство, затем добавьте его в корзину.</p>
+        </section>
+      ) : (
+        <>
+          <section className="cart-recipes">
+            <div className="section-heading">
+              <div><p className="eyebrow">III · Заказ</p><h3>Выбранные рецепты</h3></div>
+              <span className="output-pill">{rows.length} поз.</span>
+            </div>
+            <div className="cart-lines">
+              {rows.map((row) => (
+                <div className="cart-line" key={row.recipe.id}>
+                  <button className={`recipe-icon cart-open ${row.recipe.kind}`} onClick={() => onOpen(row.entry)} aria-label={`Открыть рецепт ${nameRu(row.recipe.name)}`}>
+                    {row.recipe.kind === "alchemy" ? "◉" : "◇"}
+                  </button>
+                  <div className="cart-line-title">
+                    <button onClick={() => onOpen(row.entry)}>{nameRu(row.recipe.name)}</button>
+                    <small>{categoryLabel(row.recipe.category)} · выход ×{row.plan.output} · {durationRu(row.duration)}</small>
+                    <span>{row.entry.crafted.length ? `Вложенное производство: ${row.entry.crafted.length}` : row.recipe.kind === "alchemy" ? "Выбранные вещества сохранены" : "Компоненты покупаются"}</span>
+                  </div>
+                  <label className="cart-quantity">
+                    <span>Партий</span>
+                    <input type="number" min="1" max="99" value={row.entry.batches} onChange={(event) => onChangeBatches(row.recipe.id, Math.max(1, Number(event.target.value) || 1))} />
+                  </label>
+                  <strong>{money(row.plan.total)}</strong>
+                  <button className="remove-cart" onClick={() => onRemove(row.recipe.id)} aria-label={`Удалить ${nameRu(row.recipe.name)} из корзины`}>×</button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="cart-summary">
+            <div className="section-heading"><div><p className="eyebrow">IV · Итог</p><h3>Общая ведомость</h3></div></div>
+            <div className="cart-totals">
+              <div><small>Предварительная стоимость</small><strong>{money(summary.total)}</strong></div>
+              <div><small>Общее время работ</small><strong>{durationRu(summary.duration)}</strong></div>
+              <div><small>Операций производства</small><strong>{summary.stepCount}</strong></div>
+            </div>
+            <details className="purchase-list cart-purchases" open>
+              <summary>Суммарный список ингредиентов <span>{summary.purchases.length} позиций</span></summary>
+              <div>
+                {summary.purchases.map((item: Plan["purchases"][number]) => <p key={item.name}><span>{nameRu(item.name)}{item.estimated ? " ≈" : ""}</span><b>×{item.quantity}</b><strong>{money(item.cost)}</strong></p>)}
+              </div>
+            </details>
+            {!!summary.warnings.length && <div className="warning-box">{summary.warnings.map((warning: string) => <p key={warning}>{warningRu(warning)}</p>)}</div>}
+          </section>
+        </>
+      )}
+    </article>
+  );
+}
+
 function App() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | "craft" | "alchemy">("all");
@@ -98,6 +208,8 @@ function App() {
   const [crafted, setCrafted] = useState<Set<string>>(new Set());
   const [substanceChoices, setSubstanceChoices] = useState<Record<string, string>>({});
   const [batches, setBatches] = useState(1);
+  const [cart, setCart] = useState<CartEntry[]>([]);
+  const [view, setView] = useState<"recipe" | "cart">("recipe");
   const deferredQuery = useDeferredValue(query);
 
   const categories = useMemo(
@@ -125,6 +237,7 @@ function App() {
     setCrafted(new Set());
     setSubstanceChoices({});
     setBatches(1);
+    setView("recipe");
   };
   const updateKind = (next: "all" | "craft" | "alchemy") => {
     setKind(next);
@@ -139,6 +252,21 @@ function App() {
       return next;
     });
   };
+  const addToCart = () => {
+    const entry: CartEntry = { recipeId: selected.id, batches, crafted: [...crafted], substanceChoices: { ...substanceChoices } };
+    setCart((current) => current.some((item) => item.recipeId === selected.id)
+      ? current.map((item) => item.recipeId === selected.id ? entry : item)
+      : [...current, entry]);
+  };
+  const openCartEntry = (entry: CartEntry) => {
+    setSelectedId(entry.recipeId);
+    setBatches(entry.batches);
+    setCrafted(new Set(entry.crafted));
+    setSubstanceChoices({ ...entry.substanceChoices });
+    setView("recipe");
+  };
+  const cartContainsSelected = cart.some((item) => item.recipeId === selected.id);
+  const cartBatchCount = cart.reduce((sum, item) => sum + item.batches, 0);
 
   return (
     <div className="app-shell">
@@ -150,7 +278,12 @@ function App() {
         <div className="dataset-note">
           <span>{catalog.meta.recipeCount}</span> рецептов <i /> <span>{catalog.meta.materialCount}</span> компонентов
         </div>
-        <a className="source-link" href={catalog.meta.sourceUrl} target="_blank" rel="noreferrer">Источник данных ↗</a>
+        <div className="topbar-actions">
+          <a className="source-link" href={catalog.meta.sourceUrl} target="_blank" rel="noreferrer">Источник данных ↗</a>
+          <button className={view === "cart" ? "cart-button active" : "cart-button"} onClick={() => setView(view === "cart" ? "recipe" : "cart")}>
+            Корзина <span>{cartBatchCount}</span>
+          </button>
+        </div>
       </header>
 
       <main id="top">
@@ -197,13 +330,25 @@ function App() {
             </div>
           </aside>
 
+          {view === "cart" ? (
+            <CartPanel
+              items={cart}
+              onOpen={openCartEntry}
+              onChangeBatches={(recipeId, nextBatches) => setCart((current) => current.map((item) => item.recipeId === recipeId ? { ...item, batches: nextBatches } : item))}
+              onRemove={(recipeId) => setCart((current) => current.filter((item) => item.recipeId !== recipeId))}
+              onClear={() => setCart([])}
+            />
+          ) : (
           <article className="recipe-panel">
             <header className="recipe-header">
               <div>
                 <p className="eyebrow">II · Технологическая карта</p>
                 <span className={`kind-badge ${selected.kind}`}>{selected.kind === "alchemy" ? "Алхимия" : "Ремесло"}</span>
                 <h2>{nameRu(selected.name)}</h2>
-                <p>{categoryLabel(selected.category)} · {LEVEL_LABELS[selected.level] ?? selected.level}</p>
+                <p className="recipe-meta">{categoryLabel(selected.category)} · {LEVEL_LABELS[selected.level] ?? selected.level}</p>
+                <button className={cartContainsSelected ? "add-cart-button added" : "add-cart-button"} onClick={addToCart}>
+                  {cartContainsSelected ? "Обновить в корзине" : "Добавить в корзину"}
+                </button>
               </div>
               <dl className="recipe-stats">
                 <div><dt>Сложность</dt><dd>{selected.dc}</dd></div>
@@ -281,6 +426,7 @@ function App() {
               {!!plan.warnings.length && <div className="warning-box">{plan.warnings.map((warning) => <p key={warning}>{warningRu(warning)}</p>)}</div>}
             </section>
           </article>
+          )}
         </section>
       </main>
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { NAME_RU, SUBSTANCE_RU, formulaCostRu, nameRu, timeRu } from "../src/data/ru.ts";
-import { calculatePlan, collectCraftableIngredients, createIndexes, normalizeKey } from "../src/lib/planner.js";
+import { NAME_RU, SUBSTANCE_RU, durationRu, formulaCostRu, nameRu, timeRu } from "../src/data/ru.ts";
+import { calculatePlan, calculatePlanDuration, collectCraftableIngredients, combinePlans, createIndexes, normalizeKey, parseRecipeTime } from "../src/lib/planner.js";
 
 const catalog = JSON.parse(await readFile(new URL("../src/data/catalog.generated.json", import.meta.url), "utf8"));
 const indexes = createIndexes(catalog);
@@ -78,4 +78,22 @@ test("batch count scales craft output and raw purchases", () => {
   const three = calculatePlan(dagger, catalog, { indexes, batches: 3 });
   assert.equal(three.output, one.output * 3);
   assert.equal(three.total, one.total * 3);
+});
+
+test("cart combines ingredients, cost and production time", () => {
+  assert.deepEqual(parseRecipeTime("1/2 Hour"), { minutes: 30, rounds: 0 });
+  assert.deepEqual(parseRecipeTime("5 Rounds"), { minutes: 0, rounds: 5 });
+  assert.deepEqual(parseRecipeTime("g Hours"), { minutes: 540, rounds: 0 });
+
+  const daggerPlan = calculatePlan(recipe("Dagger"), catalog, { indexes, batches: 2 });
+  const swallowPlan = calculatePlan(recipe("Swallow"), catalog, { indexes, batches: 3 });
+  assert.deepEqual(calculatePlanDuration(daggerPlan), { minutes: 240, rounds: 0 });
+  assert.deepEqual(calculatePlanDuration(swallowPlan), { minutes: 90, rounds: 0 });
+
+  const cart = combinePlans([daggerPlan, swallowPlan]);
+  assert.equal(cart.total, daggerPlan.total + swallowPlan.total);
+  assert.deepEqual(cart.duration, { minutes: 330, rounds: 0 });
+  assert.equal(durationRu(cart.duration), "5 ч 30 мин");
+  assert.ok(cart.purchases.some((item) => item.name === "Timber" && item.quantity === 2));
+  assert.ok(cart.purchases.some((item) => item.name === "Iron" && item.quantity === 2));
 });
